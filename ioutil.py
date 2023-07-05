@@ -4,6 +4,9 @@
 
 import struct
 
+def wraptext(s, w):
+    return [s[i:i + w] for i in range(0, len(s), w)]
+
 # read_struct reads struct data from a file-like object
 def read_struct(file, fmt):
     size = struct.calcsize(fmt)
@@ -33,3 +36,20 @@ def read_cstr(file):
 # write_cstr writes a C-style string
 def write_cstr(file, buf):
     file.write(buf + '\x00')
+
+
+def read_fixed_string(file):
+    length, = read_struct(file, '<I')
+
+    if length <= 0:
+        return b''
+    
+    return read_struct(file, "<{}s".format(length))[0].split(b'\x00')[0]
+
+def write_fixed_string(file, buff):
+    length = len(buff)
+
+    write_struct(file, '<I', length)
+
+    if length > 0:
+        file.write(buff)
