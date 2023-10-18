@@ -663,21 +663,25 @@ def load_pet(context, file, matrix, setting):
 
     # verifica se já tem o bone padrão carregado
     if model.is_mpet or model.is_apet:
-        char_letter = filename.rfind('_')
+        char_letter = filename.find('_')
         if char_letter != -1:
-            char_letter = filename[:char_letter + 1] + 'def.bpet Armature'
-            armature_obj = bpy.data.objects.get(char_letter)
-            if armature_obj:
-                armature = armature_obj.data
-                bonematrix = armature_obj['bonematrix']
-                context.view_layer.objects.active = armature_obj
-                bpy.ops.object.mode_set(mode='OBJECT')
+            for obj_key in filter(lambda key: key.find('.bpet Armature') >= 0, bpy.data.objects.keys()):
+                char_letter_obj = obj_key.find('_')
+                if char_letter_obj != -1 and char_letter == char_letter_obj:
+                    armature_obj = bpy.data.objects.get(obj_key)
+                    if armature_obj:
+                        armature = armature_obj.data
+                        bonematrix = armature_obj['bonematrix']
+                        context.view_layer.objects.active = armature_obj
+                        bpy.ops.object.mode_set(mode='OBJECT')
+                        break
 
     if not armature_obj:
         if model.is_apet:
             raise Exception('bpet not loaded')
         
         armature_obj, armature, bonematrix = MakeArmature()
+        print('criou um novo bone: ', armature_obj.name)
 
     mesh_obj = None
 
