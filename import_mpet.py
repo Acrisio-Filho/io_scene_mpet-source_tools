@@ -74,32 +74,32 @@ def vec_roll_to_mat3(vec, roll):
     #create a 3x3 matrix
     bMatrix = Matrix().to_3x3()
 
-    theta = 1.0 + nor[1];
+    theta = 1.0 + nor[1]
 
     if (theta > THETA_THRESHOLD_NEGY_CLOSE) or ((nor[0] or nor[2]) and theta > THETA_THRESHOLD_NEGY):
 
-        bMatrix[1][0] = -nor[0];
-        bMatrix[0][1] = nor[0];
-        bMatrix[1][1] = nor[1];
-        bMatrix[2][1] = nor[2];
-        bMatrix[1][2] = -nor[2];
+        bMatrix[1][0] = -nor[0]
+        bMatrix[0][1] = nor[0]
+        bMatrix[1][1] = nor[1]
+        bMatrix[2][1] = nor[2]
+        bMatrix[1][2] = -nor[2]
         if theta > THETA_THRESHOLD_NEGY_CLOSE:
             #If nor is far enough from -Y, apply the general case.
-            bMatrix[0][0] = 1 - nor[0] * nor[0] / theta;
-            bMatrix[2][2] = 1 - nor[2] * nor[2] / theta;
-            bMatrix[0][2] = bMatrix[2][0] = -nor[0] * nor[2] / theta;
+            bMatrix[0][0] = 1 - nor[0] * nor[0] / theta
+            bMatrix[2][2] = 1 - nor[2] * nor[2] / theta
+            bMatrix[0][2] = bMatrix[2][0] = -nor[0] * nor[2] / theta
 
         else:
             #If nor is too close to -Y, apply the special case.
-            theta = nor[0] * nor[0] + nor[2] * nor[2];
-            bMatrix[0][0] = (nor[0] + nor[2]) * (nor[0] - nor[2]) / -theta;
-            bMatrix[2][2] = -bMatrix[0][0];
-            bMatrix[0][2] = bMatrix[2][0] = 2.0 * nor[0] * nor[2] / theta;
+            theta = nor[0] * nor[0] + nor[2] * nor[2]
+            bMatrix[0][0] = (nor[0] + nor[2]) * (nor[0] - nor[2]) / -theta
+            bMatrix[2][2] = -bMatrix[0][0]
+            bMatrix[0][2] = bMatrix[2][0] = 2.0 * nor[0] * nor[2] / theta
 
     else:
         #If nor is -Y, simple symmetry by Z axis.
         bMatrix = Matrix().to_3x3()
-        bMatrix[0][0] = bMatrix[1][1] = -1.0;
+        bMatrix[0][0] = bMatrix[1][1] = -1.0
 
     #Make Roll matrix
     rMatrix = Matrix.Rotation(roll, 3, nor)
@@ -304,266 +304,6 @@ def import_material_v280(mtrl, filepath):
                                      specular_node.outputs["BSDF"])
 
     return {"material": new_mtrl, "image": new_image}
-
-def create_object_mesh(context, anim_collection, filename, model, materials, _pose, keyframes, iframe, matrix):
-
-    bpy.ops.object.mode_set(mode='OBJECT')
-
-    # deselect all objects in collection
-    bpy.ops.object.select_all(action='DESELECT')
-
-
-    def framelowest(kfs, pbone, frame, active_lowest=True):
-        try:
-            if frame == 0:
-                return kfs[0]
-            kf = next((kf for kf in kfs if kf.frame == frame), None)
-            if kf is None:
-                if not active_lowest:
-                    return KeyFrame(_frame=frame)
-                else:
-                    return framelowest(kfs, pbone, frame - 1, active_lowest)
-            return kf
-        except IndexError:
-            print(IndexError, ' - use rest pose from bone ', pbone.name, ' in frame ', frame)
-
-            vpos = pbone.bone.matrix_local.to_translation()
-            qrot = pbone.bone.matrix_local.to_quaternion().normalized()
-            
-            return KeyFrame(
-                _frame=frame,
-                #_pos=True,
-                #_rot=True,
-                #_vpos=vpos,
-                #_qrot=qrot,
-                #_matrix=pbone.bone.matrix_local
-            )
-        
-    def calc_bonemati(kfs, bone, frame):
-        bonemat = Matrix()
-        boneptr = bone
-        while True:
-            bonemat = framelowest(kfs[boneptr], boneptr, frame).matrix @ bonemat
-            if not boneptr.parent:
-                break
-            boneptr = boneptr.parent
-        return bonemat
-        
-    def calc_bonemat2(model, kfs, bone, frame):
-        bonemat = Matrix()
-        boneptr = bone
-        while True:
-            m = makeMatrixFrom3x4(next((bb.matrix for bb in model.bones if bb.name.decode('utf-8') == boneptr.name), None)) 
-            kf = framelowest(kfs[boneptr], boneptr, frame, True)
-            vpos = kf.vpos
-            qrot = kf.qrot
-            if not kf.rot:
-                qrot = m.to_quaternion().normalized()
-            if not kf.pos:
-                vpos = m.to_translation()
-            m = Matrix.LocRotScale(vpos, qrot, m.to_scale())
-            bonemat = m @ bonemat
-            if not boneptr.parent:
-                break
-            boneptr = boneptr.parent
-        return bonemat
-
-    # make armature
-    def MakeArmature(arm_name, iframe, pose_bones):
-        # armature
-        armature = bpy.data.armatures.new(arm_name + " Armature")
-        armature.display_type = 'STICK' # large bones otherwise make this a bit ridiculous.
-        armature_obj = bpy.data.objects.new(arm_name + " Armature", armature)
-        anim_collection.objects.link(armature_obj)
-        armature_obj.select_set(True)
-
-        # create bones.
-        context.view_layer.objects.active = armature_obj
-        bpy.ops.object.mode_set(mode='EDIT')
-        bbonemap = {}
-        bonematrix = {}
-
-        # pass 1: create bones
-        for id, bone in enumerate(model.bones):
-            name = bone.name.decode('utf-8')
-            bbone = armature.edit_bones.new(name)
-            armature.edit_bones.active = bbone
-
-            bbone.use_deform = True
-            bbone.use_connect = True
-            bbone.use_inherit_rotation = True
-            bbone.use_inherit_scale = True
-            bbone.use_local_location = True
-
-            bbonemap[id] = bbone
-
-        # pass 2: assign parents
-        for id, bone in enumerate(model.bones):
-            bbone = bbonemap[id]
-            armature.edit_bones.active = bbone
-
-            try:
-                bonemat = matrix @ calc_bonemat2(model, keyframes, pose_bones[bbone.name], iframe)
-
-                bbone.transform(bonemat)
-                #bbone.matrix = bonemat
-
-                # todo: calculate roll?
-                #bbone.head = bonemat.to_translation()
-
-                #bbone.tail = bonemat.to_translation()
-                #if bone.parent == 255 or bbone.tail.length == 0.0:
-                #    bbone.tail = 0,0,-0.005
-                #bbone.roll = 0
-
-                bonematrix[str(id)] = {'id': id, 'name': bbone.name, 'matrix': bonemat, 'matrix_i': matrix.inverted() @ bonemat}
-
-                if bone.parent != 255:
-                    parent = bbonemap[bone.parent]
-                    bbone.parent = parent
-                    #bbone.head = parent.tail
-            except KeyError:
-                pass
-
-        bpy.ops.object.mode_set(mode='OBJECT')
-
-        # set bonematrix into object of armature
-        armature_obj['bonematrix'] = bonematrix
-
-        return armature_obj, armature, bonematrix
-
-    armature_obj, armature, bonematrix = MakeArmature(filename, iframe, _pose.bones)
-
-    mesh_obj = None
-
-    # Geometry!
-    for mesh in model.meshes:
-        bmesh = bpy.data.meshes.new(filename)
-        obj = bpy.data.objects.new(filename, bmesh)
-
-        # Flatten vertices down to [x,y,z,x,y,z...] array.
-        verts = []
-        for vert in mesh.vertices:
-            vector = Vector([0, 0, 0, 0])
-            vertpos = Vector([vert.x, vert.y, vert.z, 1])
-
-            weight = vert.bone_weights[0]
-            mat = calc_bonemat(model, model.bones[weight.id].name.decode('utf-8'), bonematrix)
-            vector += mat @ vertpos * (1.0 / 255 * weight.weight)
-
-            verts.extend((
-                (vector.x / vector.w),
-                (vector.y / vector.w),
-                (vector.z / vector.w),
-            ))
-        bmesh.vertices.add(len(mesh.vertices))
-        bmesh.vertices.foreach_set("co", verts)
-
-        # Polygons
-        num_faces = len(mesh.polygons)
-        bmesh.polygons.add(num_faces)
-        bmesh.loops.add(num_faces * 3)
-        faces = []
-        for p in mesh.polygons:
-            faces.extend((
-                p.indices[0].index,
-                p.indices[1].index,
-                p.indices[2].index
-            ))
-        bmesh.polygons.foreach_set("loop_start", range(0, num_faces * 3, 3))
-        bmesh.polygons.foreach_set("loop_total", (3,) * num_faces)
-        bmesh.polygons.foreach_set("use_smooth", (True,) * num_faces)
-        bmesh.loops.foreach_set("vertex_index", faces)
-
-        # UV maps
-        uvtex = bmesh.uv_layers.new()
-        uvlayer = bmesh.uv_layers.active.data[:]
-        for index, bpolygon in enumerate(bmesh.polygons):
-            polygon = mesh.polygons[index]
-
-            i = bpolygon.loop_start
-            for index2 in polygon.indices:
-                uvlayer[i].uv = index2.uvMapping[0].u, 1.0 - index2.uvMapping[0].v
-                i += 1
-
-        # Materials
-        for material in materials:
-            bmesh.materials.append(material)
-
-        for index, material in enumerate(mesh.texmap):
-            bmesh.polygons[index].material_index = material
-
-        # Normals
-        bmesh.create_normals_split()
-        loops_nor = []
-        for p in mesh.polygons:
-            for index in p.indices:
-                loops_nor.extend((
-                    index.nx,
-                    index.ny,
-                    index.nz
-                ))
-        bmesh.loops.foreach_set("normal", loops_nor)
-
-        bmesh.validate(clean_customdata=False) # *Very* important to not remove lnors here!
-        bmesh.update()
-
-        # Normal Set
-        bpy.ops.object.shade_smooth()
-        clnors = array.array('f', [0.0] * (len(bmesh.loops) * 3))
-        bmesh.loops.foreach_get('normal', clnors)
-        for poly in bmesh.polygons:
-            poly.select = True
-        bmesh.use_auto_smooth = True
-        bmesh.auto_smooth_angle = 180
-        bmesh.normals_split_custom_set(tuple(zip(*(iter(clnors),) * 3)))
-
-        # Vertex groups
-        VertexWeight = namedtuple('VertexWeight', ['vertex', 'weight'])
-        groups = {}
-
-        # Translate weights into structure of groups.
-        for id, vertex in enumerate(mesh.vertices):
-            for weight in vertex.bone_weights:
-                group = groups.get(weight.id, [])
-                group.append(VertexWeight(id, 1.0 / 255 * weight.weight))
-                groups[weight.id] = group
-
-        # Load groups into Blender
-        for id, weights in groups.items():
-            group_name = model.bones[id].name.decode('utf-8')
-            bgroup = obj.vertex_groups.new(name=group_name)
-            for weight in weights:
-                bgroup.add([weight.vertex], weight.weight, 'ADD')
-
-        obj.matrix_world = obj.matrix_world @ matrix
-        anim_collection.objects.link(obj)
-
-        # Armature modifier
-        bmodifier = obj.modifiers.new(armature.name, type='ARMATURE')
-        bmodifier.show_expanded = False
-        bmodifier.use_vertex_groups = True
-        bmodifier.use_bone_envelopes = False
-        bmodifier.object = armature_obj
-        
-        # set parent armature to obj
-        obj.select_set(True)
-        context.view_layer.objects.active = obj
-        bpy.ops.object.parent_set(type='ARMATURE_ENVELOPE')
-        
-        # flip normals
-        bpy.ops.object.mode_set(mode='EDIT')
-        bpy.ops.mesh.select_all(action='SELECT')
-        bpy.ops.mesh.flip_normals()
-        bpy.ops.object.mode_set(mode='OBJECT')
-
-        mesh_obj = obj
-    
-    armature_obj.hide_render = True
-    armature_obj.hide_set(True)
-    
-    # deselect all objects in collection
-    bpy.ops.object.select_all(action='DESELECT')
 
 def load_pet(context, file, matrix, setting):
     dirname = os.path.dirname(file.name)
@@ -898,147 +638,16 @@ def load_pet(context, file, matrix, setting):
         for bone in armature_obj.pose.bones:
             bone.rotation_mode = 'QUATERNION'
     
+        # remove duplicates
         for bone,frames in list(keyframes.items()):
             if not frames:
                 del keyframes[bone]
 
-        def framelowest(kfs, pbone, frame, active_lowest=True):
-            try:
-                if frame == 0:
-                    return kfs[0]
-                kf = next((kf for kf in kfs if kf.frame == frame), None)
-                if kf is None:
-                    if not active_lowest:
-                        return KeyFrame(_frame=frame)
-                    else:
-                        return framelowest(kfs, bone, frame - 1)
-                return kf
-            except IndexError:
-                print(IndexError, ' - use rest pose from bone ', pbone.name, ' in frame ', frame)
-
-                vpos = pbone.bone.matrix_local.to_translation()
-                qrot = pbone.bone.matrix_local.to_quaternion().normalized()
-                
-                return KeyFrame(
-                    _frame=frame,
-                    _pos=True,
-                    _rot=True,
-                    _vpos=vpos,
-                    _qrot=qrot,
-                    _matrix=pbone.bone.matrix_local
-                )
-        
-        def calc_bonemati(kfs, bone, frame):
-            bonemat = Matrix()
-            boneptr = bone
-            while True:
-                bonemat = framelowest(kfs[boneptr], boneptr, frame).matrix @ bonemat
-                if not boneptr.parent:
-                    break
-                boneptr = boneptr.parent
-            return bonemat
-        
-        def calc_bonemat2(model, kfs, bone, frame):
-            bonemat = Matrix()
-            boneptr = bone
-            while True:
-                m = makeMatrixFrom3x4(next((bb.matrix for bb in model.bones if bb.name.decode('utf-8') == boneptr.name), None)) 
-                kf = framelowest(kfs[boneptr], boneptr, frame, False)
-                vpos = kf.vpos
-                qrot = kf.qrot
-                if not kf.rot:
-                    qrot = m.to_quaternion().normalized()
-                if not kf.pos:
-                    vpos = m.to_translation()
-                m = Matrix.LocRotScale(vpos, qrot, m.to_scale())
-                bonemat = m @ bonemat
-                if not boneptr.parent:
-                    break
-                boneptr = boneptr.parent
-            return bonemat
-        
-        # make armatures animations
-        anim_collection = bpy.data.collections.new('List Animação - ' + filename)
-
-        collection.children.link(anim_collection)
-
-        for iframe in range(endf):
-            create_object_mesh(context, anim_collection, filename + ' anim', model, materials, armature_obj.pose, keyframes, iframe, matrix)
-        
         armature_obj.select_set(True)
         context.view_layer.objects.active = armature_obj
 
         bpy.ops.object.mode_set(mode='POSE')
 
-        def getTransformMatrix(keyframes, bone, i):
-            keyframe = keyframes[bone]
-
-            framek = framelowest(keyframe, bone, i)
-
-            rot = framek.qrot
-            loc = framek.vpos
-
-            if not framek.rot:
-                framek_rot = framek
-
-                while not framek_rot.rot and framek_rot.frame > 0:
-                    framek_rot = framelowest(keyframe, bone, framek_rot.frame - 1)
-
-                rot = framek_rot.qrot
-            
-            if not framek.pos:
-                framek_pos = framek
-
-                while not framek_pos.pos and framek_pos.frame > 0:
-                    framek_pos = framelowest(keyframe, bone, framek_pos.frame -1)
-
-                loc = framek_pos.vpos
-
-            bone_rot_m = rot.to_matrix().to_4x4()
-            bone_rot_m = bone_rot_m @ Matrix.Translation(loc)
-
-            return bone_rot_m, Vector((1, 1, 1))
-
-        def animBone(_bone, pose, keyframes, endf, armature, armature_obj):
-            if _bone.name not in armature.bones.keys():
-                print("bone %s not found in armature %s" % (_bone.name, armature.name))
-                return
-            
-            if not keyframes.get(_bone, None):
-                print("bone %s not found in animations" % _bone.name)
-                return
-
-            bone = armature.bones[_bone.name]
-            bone_rest_m = bone.matrix_local.copy()
-
-            if bone.parent:
-                parent_bone = bone.parent
-                parent_bone_rest_m = parent_bone.matrix_local.copy()
-                parent_bone_rest_m.invert()
-                bone_rest_m = bone_rest_m @ parent_bone_rest_m
-
-            bone_rest_m_inv = Matrix(bone_rest_m)
-            bone_rest_m_inv.invert()
-            pbone = pose.bones[bone.name]
-            bone_group = bone.name
-            bone_string = "pose.bones[\"{}\"].".format(bone.name)
-            options = set(('INSERTKEY_NEEDED',))
-            for i in range(0, endf):
-                context.scene.frame_set(i)
-                pbone.matrix = pbone.bone.matrix_local @ bone_rest_m_inv
-                context.view_layer.update()
-                transform,scale = getTransformMatrix(keyframes, bone, i)
-                #transform,scale = (calc_bonemat2(model, keyframes, bone, i),Vector((1,1,1)),)
-                pbone.matrix = transform @ bone_rest_m_inv
-                pbone.scale = scale
-                context.view_layer.update()
-                armature_obj.keyframe_insert(data_path=bone_string + 'location', group=bone_group, options=options)
-                armature_obj.keyframe_insert(data_path=bone_string + 'rotation_quaternion', group=bone_group, options=options)
-                armature_obj.keyframe_insert(data_path=bone_string + 'scale', group=bone_group, options=options)
-        
-        #for pbone in armature_obj.pose.bones:
-        #    animBone(pbone, armature_obj.pose, keyframes, endf, armature, armature_obj)
-        
         # apply recursive bone
         def ApplyRecursive(bone):
             keys = keyframes.get(bone)
@@ -1066,22 +675,15 @@ def load_pet(context, file, matrix, setting):
                 # apply
                 for keyframe in keys:
 
-                    mtt = bone.bone.matrix_local.copy()
-                    if bone.parent:
-                        mtt = mtt @ bone.parent.bone.matrix_local.copy().inverted()
-                    #bone.matrix_basis = calc_bonemat2(model, keyframes, bone, keyframe.frame)
-                    bone.matrix_basis,_ = getTransformMatrix(keyframes, bone, keyframe.frame)
-                    bone.matrix_basis = mtt.inverted() @ bone.matrix_basis
-
                     if keyframe.pos:
                         for i in range(3):
                             curvesLoc[i].keyframe_points.add(1)
-                            curvesLoc[i].keyframe_points[-1].co = [keyframe.frame,bone.location[i]]
+                            curvesLoc[i].keyframe_points[-1].co = [keyframe.frame,keyframe.vpos[i]]
 
                     if keyframe.rot:
                         for i in range(4):
                             curvesRot[i].keyframe_points.add(1)
-                            curvesRot[i].keyframe_points[-1].co = [keyframe.frame,bone.rotation_quaternion[i]]
+                            curvesRot[i].keyframe_points[-1].co = [keyframe.frame,keyframe.qrot[i]]
 
                     context.view_layer.update()
                     
@@ -1093,9 +695,9 @@ def load_pet(context, file, matrix, setting):
                 ApplyRecursive(child)
 
         # Start
-        #for bone in armature_obj.pose.bones:
-        #    if not bone.parent:
-        #        ApplyRecursive(bone)
+        for bone in armature_obj.pose.bones:
+            if not bone.parent:
+                ApplyRecursive(bone)
 
         context.scene.frame_set(0)
 
