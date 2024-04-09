@@ -49,7 +49,7 @@ def calc_bonemat(model, bone_name, bonematrix=None):
     
     bonemat = Matrix.Identity(4)
     boneptr = next((b for b in model.bones if b.name.decode('utf-8') == bone_name), None)
-    while True:
+    while boneptr:
         m = boneptr.matrix
         bonemat = Matrix([
             [m[0], m[3], m[6], m[9]],
@@ -320,8 +320,12 @@ def load_pet(context, file, matrix, setting):
 
         materials.append(mat['material'])
 
-    # deselect all objects in collection
-    bpy.ops.object.select_all(action='DESELECT')
+    if len(context.selected_objects) > 0:
+        # change to object mode, to deselect all objects in collection
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+        # deselect all objects in collection
+        bpy.ops.object.select_all(action='DESELECT')
 
     # Collection
     collection = bpy.data.collections.new(filename)

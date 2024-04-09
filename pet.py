@@ -415,7 +415,7 @@ class Frame:
 
         self.index, = read_struct(file, '<I')
         for i in range(3):
-            msg = read_fixed_string(file)
+            msg = read_fixed_string(file).decode('euc_kr')
             self.messages.append(msg)
 
         if total < 2 and self.messages[0] == '':
@@ -439,7 +439,7 @@ class Frame:
             write_struct(check)
 
     def __repr__(self):
-        return "Frame(%d, %s, %d)" % (self.index, self.message, self.check)
+        return "Frame(%d, %s, %d)" % (self.index, ''.join(self.messages), self.check)
 
 class FaceAnimation:
     def __init__(self, group=None, name=None, material_name=None):
@@ -607,7 +607,9 @@ class Animation:
                 flag.save(file)
 
     def __repr__(self):
-        return "Animations()"
+        return "Animations(BoneId: %d, Time: %f, Positions: %d, Rotations: %d, Scalings: %d, Flags; %d)" % (
+            self.bone_id, self.animTime, len(self.positions), len(self.rotations), len(self.scalings), len(self.flags)
+        )
 
 
 class SpecularValue:
@@ -968,6 +970,7 @@ class Mesh:
     
     def save(self, file, is_mpet):
         if is_mpet:
+            write_struct(file, '<B', len(self.mpetexs))
             for mpetex in self.mpetexs:
                 mpetex.save(file)
         write_struct(file, '<I', len(self.vertices))
